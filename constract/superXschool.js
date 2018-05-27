@@ -1,24 +1,24 @@
 'use strict';
 
 
-let UploadTx = function (text) {
+let Course = function (text) {
     if (text) {
         let o = JSON.parse(text);
-        this.from = o.from; //user address
-        this.username = o.username;//user name
+        this.teacherName = o.teacherName;//user name
         this.price = new BigNumber(o.price); //price todo为什么一定是整数？
         this.courseId = new BigNumber(o.courseId);
         this.time = o.time // subscribe time
+        this.uploaderAddress = o.address
     } else {
-        this.from = "";
         this.price = new BigNumber(0);
-        this.username = "";
+        this.teacherName = "";
         this.courseId = new BigNumber(0);
         this.time = "";
+        this.uploaderAddress = ""
     }
 };
 
-UploadTx.prototype = {
+Course.prototype = {
     toString: function () {
         return JSON.stringify(this);
     }
@@ -55,15 +55,15 @@ UploadRecord.prototype = {
 };
 
 let SuperXSchool = function () {
-    LocalContractStorage.defineMapProperty(this, "uploadTx", {
+    LocalContractStorage.defineMapProperty(this, "uploadCourses", {
         parse: function (text) {
-            return new UploadTx(text);
+            return new Course(text);
         },
         stringify: function (o) {
             return o.toString();
         }
     });
-    LocalContractStorage.defineMapProperty(this, "uploadRecord", {
+    LocalContractStorage.defineMapProperty(this, "uploadRecords", {
         parse: function (text) {
             return new UploadRecord(text);
         },
@@ -71,7 +71,7 @@ let SuperXSchool = function () {
             return o.toString();
         }
     });
-    LocalContractStorage.defineMapProperty(this, "subscribeRecord", {
+    LocalContractStorage.defineMapProperty(this, "SubscribeRecords", {
         parse: function (text) {
             return new SubscribeRecord(text);
         },
@@ -99,69 +99,80 @@ SuperXSchool.prototype = {
      * @param word
      * @param time
      */
-    subscribeCourse: function (username, courseId, teacher_address) {
+    subscribeCourse: function (username, courseId) {
         let value = Blockchain.transaction.value;
         let from = Blockchain.transaction.from;
-        let courseInfo = this.uploadTx.get(teacher_address + "_" + courseId);
+        let courseInfo = this.uploadCourses.get(courseId);
         if(!courseInfo){
-            throw Error("课程不存在");
+            throw new Error("课程不存在");
         }
         if (value < courseInfo.price) {
-            throw new Error("付费不足，课程价格为：" + price.toString());
+            throw new Error("付费不足，课程价格为：" + courseInfo.price);
         }
-        let pay_result = Blockchain.transfer(teacher_address, new BigNumber(parseInt(price)));
+        let teacherMoney = new BigNumber(parseFloat(courseInfo.price) * 0.4);
+        let teacherMoneyWei = teacherMoney.times(new BigNumber(1000000000000000000))
+        // if (!courseInfo.uploaderAddress) {
+        //     throw new Error(courseInfo.teacherName, courseInfo.price, courseInfo.courseId, courseInfo.time);
+        // }
+        // let pay_result = Blockchain.transfer(courseInfo.uploaderAddress, teacherMoney);
+        let pay_result = Blockchain.transfer("n1HtMbVLEPqmk8Pd1f77gZJYJMJb2jH2T8v", teacherMoneyWei);
+
         if (!pay_result) {
             throw new Error("付费失败. ");
         }
 
-        let subscribeRecord = this.SubscribeRecord.get(username);
+        let subscribeRecord = this.SubscribeRecords.get(username);
         if (!subscribeRecord) {
-            subscribeRecord = new UploadRecord()
+            subscribeRecord = new SubscribeRecord()
         }
         subscribeRecord.courseIds.push(courseId)
+        this.SubscribeRecords.put(username, subscribeRecord);
+        return "success"
+        
     },
 
     getSubsribeCourse: function (username) {
-        return this.SubscribeRecord.get(username).courseIds;
+        return this.SubscribeRecords.get(username).courseIds;
     },
 
-    uploadCourse: function (price, courseId, username, time) {
+    uploadCourse: function (courseId, price, teacherName, time) {
         let from = Blockchain.transaction.from;
         let value = Blockchain.transaction.value;
-        let uploadId = this.uploadTx.get(from + "_" + courseId);
-        if (uploadId) {
-            throw new Error("uploadId: " + uploadId + "has been sent");
+        let course = this.uploadCourses.get(courseId);
+        if (course) {
+            throw new Error("courseId: " + courseId + "has existed");
         }
         if (price < 0) { //
             throw new Error("value not less than zero");
         }
-        let poundage = new BigNumber(parseInt(price) * 0.001);
+
+        let poundage = new BigNumber(parseFloat(price) * 0.001);
+        let poundageWei = poundage.times(new BigNumber(1000000000000000000));
+
         if (value < poundage) {
-            throw new Error("请同时支付" + (price*0.001).toString() + "NAS的手续费,你的转账额只有：" + value)
+            throw new Error("你的转账额不足：" + value);
         }
 
-        let uploadIds = this.uploadRecord.get(from);
+        let uploadIds = this.uploadRecords.get(teacherName);
         if (!uploadIds) {
-            uploadIds = new UploadRecord()
+            uploadIds = new UploadRecord();
         }
-        let uploadItem = new UploadTx();
-        uploadItem.from = from;
-        uploadItem.price = new BigNumber(price);
+        let uploadItem = new Course();
+        uploadItem.price = new BigNumber(parseFloat(price));
         uploadItem.courseId = courseId;
-        uploadItem.username = username;
+        uploadItem.teacherName = teacherName;
         uploadItem.time = time;
+        uploadItem.uploaderAddress = from;
         uploadIds.ids.push(courseId);
-        this.uploadTx.put(from + "_" + courseId, uploadItem);
-        this.uploadRecord.put(from, uploadIds);
-        console.log(from, uploadIds.ids)
+        this.uploadCourses.put(courseId, uploadItem);
+        this.uploadRecords.put(teacherName, uploadIds);
     },
 
     /**
      *
      */
-    getUploadIds: function () {
-        let from = Blockchain.transaction.from;
-        return this.uploadRecord.get(from).ids;
+    getUploadIds: function (teacherName) {
+        return this.uploadRecords.get(teacherName).ids;
     },
 
     /**
@@ -170,7 +181,7 @@ SuperXSchool.prototype = {
      */
     getCourseInfo: function (courseId) {
         let address = Blockchain.transaction.from;
-        return this.uploadTx.get(address + "_" + courseId);
+        return this.uploadCourses.get(courseId);
     },
 
     getAddress: function () {
