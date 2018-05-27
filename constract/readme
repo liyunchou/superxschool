@@ -1,0 +1,12 @@
+正常版：superXschool.js
+写死版：superXschool_d.js
+
+
+测试网合约地址：n1uEBHebR3pKXZWJaCtEcsJqEsRs15Tq128
+一个成功运行的参数：（注意，模仿的时候uploadCourseId不能重复）
+uploadCourseId  ["10002", "0.001", "liyongle", "20180321"]
+getUploadIds    ["liyongle"]
+getCourseInfo   ["10002"]
+subscribeCourse ["jige","10002"]
+getSubsribeCourse   ["jige"]
+
